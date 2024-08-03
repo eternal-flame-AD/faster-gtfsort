@@ -11,6 +11,7 @@ use std::io::{self, Write};
 use std::path::Path;
 
 use indoc::indoc;
+use log::info;
 
 use crate::gtf::Record;
 use crate::ord::CowNaturalSort;
@@ -286,7 +287,10 @@ pub fn parallel_parse<const SEP: u8>(s: &str) -> Result<ChromRecord<'_>, &'stati
 pub fn max_mem_usage_mb() -> f64 {
     let rusage = unsafe {
         let mut rusage = std::mem::MaybeUninit::uninit();
-        libc::getrusage(libc::RUSAGE_SELF, rusage.as_mut_ptr());
+        if libc::getrusage(libc::RUSAGE_SELF, rusage.as_mut_ptr()) < 0 {
+            info!("getrusage failed: {}", std::io::Error::last_os_error());
+            return f64::NAN;
+        }
         rusage.assume_init()
     };
     let maxrss = rusage.ru_maxrss as f64;
@@ -308,12 +312,19 @@ pub fn max_mem_usage_mb() -> f64 {
         let h_proc = GetCurrentProcess();
 
         let mut pps = PROCESS_MEMORY_COUNTERS::default();
-        GetProcessMemoryInfo(
+        if GetProcessMemoryInfo(
             h_proc,
             &mut pps,
             std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
         )
-        .ok();
+        .is_err()
+        {
+            info!(
+                "GetProcessMemoryInfo failed: {}",
+                std::io::Error::last_os_error()
+            );
+            return f64::NAN;
+        }
 
         pps.PeakWorkingSetSize as f64 / 1024.0 / 1024.0
     }
