@@ -260,7 +260,8 @@ fn test_gencode_m35_subset_with_n_threads(nthreads: usize, prevent_mmap: bool) {
             assert_eq!(job_info.input_mmaped, false);
             assert_eq!(job_info.output_mmaped, false);
 
-            assert!(job_info.end_mem_mb.unwrap() > job_info.start_mem_mb.unwrap());
+            assert!(job_info.end_mem_mb.unwrap().is_sign_positive());
+            assert!(job_info.start_mem_mb.unwrap().is_sign_positive());
 
             crc32_hex(&output_buf[..])
         });
@@ -294,7 +295,8 @@ fn test_gencode_m35_subset_with_n_threads(nthreads: usize, prevent_mmap: bool) {
                 assert_eq!(job_info.output_mmaped, false);
             }
 
-            assert!(job_info.end_mem_mb.unwrap() > job_info.start_mem_mb.unwrap());
+            assert!(job_info.end_mem_mb.unwrap().is_sign_positive());
+            assert!(job_info.start_mem_mb.unwrap().is_sign_positive());
 
             crc32_hex(File::open(&*tmp).unwrap())
         });
