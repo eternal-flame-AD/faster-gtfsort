@@ -13,8 +13,22 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
+      
+      - name: Set up MSYS2 for Windows
+        if: ${{ startsWith(matrix.os, 'windows') }}
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
 
+      - name: Set up Rust for Windows
+        if: ${{ startsWith(matrix.os, 'windows') }}
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          target: x86_64-pc-windows-gnu
+      
       - name: Set up Rust
+        if: ${{ startsWith(matrix.os, 'windows') != true }}
         uses: actions-rs/toolchain@v1
         with:
           toolchain: ${{ matrix.rust }}
@@ -36,7 +50,7 @@ jobs:
 
       - name: Cargo Test with --no-default-features
         if: ${{ startsWith(matrix.os, 'windows') }}
-        run: $env:RUST_BACKTRACE="full"; cargo test --no-default-features -- --nocapture
+        run: $env:RUST_BACKTRACE="full"; cargo test --no-default-features --target x86_64-pc-windows-gnu -- --nocapture
 
       - name: Cargo Test with --no-default-features
         # saves time on more expensive machines
@@ -45,7 +59,7 @@ jobs:
       
       - name: Cargo Test with --all-features
         if: ${{ startsWith(matrix.os, 'windows') }}
-        run: $env:RUST_BACKTRACE="full"; cargo test --all-features -- --nocapture
+        run: $env:RUST_BACKTRACE="full"; cargo test --all-features --target x86_64-pc-windows-gnu -- --nocapture
       
       - name: Cargo Test with --all-features
         if: ${{ startsWith(matrix.os, 'windows') != true }}
