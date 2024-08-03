@@ -35,10 +35,19 @@ jobs:
         run: cargo clippy --all-features -- -D warnings
 
       - name: Cargo Test with --no-default-features
+        if: ${{ startsWith(matrix.os, 'windows') }}
+        run: $env:RUST_BACKTRACE="full"; cargo test --no-default-features
+
+      - name: Cargo Test with --no-default-features
         # saves time on more expensive machines
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
         run: RUST_BACKTRACE=full cargo test --no-default-features
       
       - name: Cargo Test with --all-features
+        if: ${{ startsWith(matrix.os, 'windows') }}
+        run: $env:RUST_BACKTRACE="full"; cargo test --all-features
+      
+      - name: Cargo Test with --all-features
+        if: ${{ startsWith(matrix.os, 'windows') != true }}
         run: RUST_BACKTRACE=full cargo test --all-features 
   
