@@ -173,6 +173,8 @@ pub fn write_obj_sequential<'a, W: Write>(
         }
     }
 
+    output.flush()?;
+
     Ok(())
 }
 

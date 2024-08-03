@@ -1,5 +1,5 @@
 #[cfg(feature = "c_ffi")]
-mod c_ffi {
+pub mod c_ffi {
     use crate::{GtfSortError, SortAnnotationsJobResult};
 
     use std::ffi::{c_char, c_ulong, c_void, CStr, CString};
@@ -103,7 +103,7 @@ mod c_ffi {
     const GTFSORT_PARSE_MODE_GFF3: u8 = 2;
 
     #[no_mangle]
-    pub extern "C" fn gtfsort_init_logger(level: *const c_char) {
+    unsafe extern "C" fn gtfsort_init_logger(level: *const c_char) {
         let level = unsafe { CStr::from_ptr(level).to_str().unwrap_or("info") };
         match level.to_ascii_lowercase().as_str() {
             "trace" => simple_logger::init_with_level(log::Level::Trace).unwrap(),
@@ -116,12 +116,12 @@ mod c_ffi {
     }
 
     #[no_mangle]
-    pub extern "C" fn gtfsort_new_sort_annotations_ret() -> *mut SortAnnotationsRet {
+    unsafe extern "C" fn gtfsort_new_sort_annotations_ret() -> *mut SortAnnotationsRet {
         Box::into_raw(Box::new(SortAnnotationsRet::Ok(std::ptr::null_mut())))
     }
 
     #[no_mangle]
-    pub extern "C" fn gtfsort_free_sort_annotations_ret(ret: SortAnnotationsRet) {
+    unsafe extern "C" fn gtfsort_free_sort_annotations_ret(ret: SortAnnotationsRet) {
         match ret {
             SortAnnotationsRet::Ok(ptr) => unsafe {
                 cstr_free!((*ptr).input);
@@ -136,7 +136,7 @@ mod c_ffi {
     }
 
     #[no_mangle]
-    pub extern "C" fn gtfsort_sort_annotations(
+    unsafe extern "C" fn gtfsort_sort_annotations(
         input: *const std::os::raw::c_char,
         output: *const std::os::raw::c_char,
         threads: usize,
@@ -162,7 +162,7 @@ mod c_ffi {
     }
 
     #[no_mangle]
-    pub extern "C" fn gtfsort_sort_annotations_gtf_str(
+    unsafe extern "C" fn gtfsort_sort_annotations_gtf_str(
         mode: u8,
         input: *const c_char,
         output: extern "C" fn(*mut c_void, *const c_char, c_ulong) -> *const c_char,
@@ -219,10 +219,11 @@ mod c_ffi {
 }
 
 #[cfg(feature = "r_ffi")]
-mod r_ffi {
+pub mod r_ffi {
     use std::{
         ffi::{c_char, CString},
         mem::transmute,
+        ops::Deref,
         path::PathBuf,
         ptr::{self, addr_of},
     };
@@ -230,31 +231,57 @@ mod r_ffi {
     use log::{info, Level, Log};
 
     use libR_sys::{
-        DllInfo, R_CallMethodDef, R_GlobalEnv, R_registerRoutines, R_useDynamicSymbols, Rboolean,
-        Rf_ScalarInteger, Rf_ScalarLogical, Rf_ScalarReal, Rf_allocVector, Rf_asChar, Rf_mkNamed,
-        Rf_mkString, Rf_protect, Rf_translateCharUTF8, Rf_unprotect, Rf_warning, Rprintf, CDR,
-        SET_STRING_ELT, SET_VECTOR_ELT, SEXP, SEXPTYPE,
+        DllInfo, R_CallMethodDef, R_GlobalEnv, R_registerRoutines, R_tryEval, R_useDynamicSymbols,
+        Rboolean, Rf_ScalarInteger, Rf_ScalarLogical, Rf_ScalarReal, Rf_ScalarString,
+        Rf_allocVector, Rf_asChar, Rf_install, Rf_lang3, Rf_mkCharLenCE, Rf_mkNamed, Rf_mkString,
+        Rf_protect, Rf_translateCharUTF8, Rf_unprotect, Rf_warning, Rprintf, CDR, SET_STRING_ELT,
+        SET_VECTOR_ELT, SEXP, SEXPTYPE,
     };
 
     use crate::{GtfSortError, SortAnnotationsJobResult};
 
     #[repr(transparent)]
-    pub struct RObj(SEXP);
+    #[derive(Debug, Clone, Copy)]
+    pub struct RObj(pub SEXP);
 
     impl RObj {
-        fn call1(&self, env: RObj, arg: RObj) -> Result<RObj, ()> {
-            unsafe {
-                let exp = Rf_protect(libR_sys::Rf_lang2(self.0, arg.0));
+        #[allow(clippy::not_unsafe_ptr_arg_deref)]
+        pub fn protect(sexp: SEXP) -> Self {
+            unsafe { RObj(Rf_protect(sexp)) }
+        }
+    }
 
-                let mut success = 0;
-                let ret = RObj(Rf_protect(libR_sys::R_tryEval(exp, env.0, &mut success)));
+    impl Deref for RObj {
+        type Target = SEXP;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    impl RObj {
+        fn clos_call1(&self, arg: RObj) -> Result<RObj, ()> {
+            unsafe {
+                let list = Rf_protect(Rf_allocVector(SEXPTYPE::VECSXP, 1));
+
+                SET_VECTOR_ELT(list, 0, *arg);
+
+                let call = Rf_protect(Rf_lang3(
+                    Rf_install("do.call\0".as_ptr() as *const c_char),
+                    **self,
+                    list,
+                ));
+
+                let mut error_occurred = 0;
+
+                let ret = R_tryEval(call, R_GlobalEnv, &mut error_occurred);
 
                 Rf_unprotect(2);
 
-                if success == 0 {
+                if error_occurred != 0 {
                     Err(())
                 } else {
-                    Ok(ret)
+                    Ok(RObj(ret))
                 }
             }
         }
@@ -518,7 +545,7 @@ mod r_ffi {
 
     #[export_name = "R_init_libgtfsort"]
     #[no_mangle]
-    pub extern "C" fn R_init(dllinfo: *mut DllInfo) {
+    unsafe extern "C" fn R_init(dllinfo: *mut DllInfo) {
         unsafe {
             log::set_logger(&*addr_of!(R_LOGGER)).unwrap();
         }
@@ -528,14 +555,17 @@ mod r_ffi {
             R_CallMethodDef {
                 name: "gtfsort_init_logger\0".as_ptr() as *const c_char,
                 fun: Some(unsafe {
-                    transmute(gtfsort_R_init_logger as extern "C" fn(RObj) -> SEXP)
+                    transmute(gtfsort_R_init_logger as unsafe extern "C" fn(RObj) -> SEXP)
                 }),
                 numArgs: 1,
             },
             R_CallMethodDef {
                 name: "gtfsort_sort_annotations\0".as_ptr() as *const c_char,
                 fun: Some(unsafe {
-                    transmute(gtfsort_R_sort_annotations as extern "C" fn(RObj, RObj, RObj) -> SEXP)
+                    transmute(
+                        gtfsort_R_sort_annotations
+                            as unsafe extern "C" fn(RObj, RObj, RObj) -> SEXP,
+                    )
                 }),
                 numArgs: 3,
             },
@@ -544,7 +574,7 @@ mod r_ffi {
                 fun: Some(unsafe {
                     transmute(
                         gtfsort_R_sort_annotations_string
-                            as extern "C" fn(RObj, RObj, RObj, RObj) -> SEXP,
+                            as unsafe extern "C" fn(RObj, RObj, RObj, RObj) -> SEXP,
                     )
                 }),
                 numArgs: 4,
@@ -626,17 +656,23 @@ mod r_ffi {
         output: RObj,
         threads: RObj,
     ) -> SEXP {
-        let mode: String = mode.try_into().expect("Failed to convert mode to usize.");
+        let mode: String = mode.try_into().expect("Failed to convert mode to string.");
         let input: String = input
             .try_into()
             .expect("Failed to convert input to string.");
         let threads = threads.into();
 
         let mut output = |str: &[u8]| {
-            let ret = output.call1(
-                RObj(unsafe { R_GlobalEnv }),
-                RObj(unsafe { Rf_mkString(str.as_ptr() as *const c_char) }),
-            );
+            let ret = output.clos_call1(RObj::protect(unsafe {
+                Rf_ScalarString(Rf_mkCharLenCE(
+                    str.as_ptr() as *const i8,
+                    str.len() as i32,
+                    libR_sys::cetype_t::CE_BYTES,
+                ))
+            }));
+            unsafe {
+                Rf_unprotect(1);
+            }
             match ret {
                 Ok(_) => Ok(str.len()),
                 Err(_) => Err(std::io::Error::new(std::io::ErrorKind::Other, "R error")),

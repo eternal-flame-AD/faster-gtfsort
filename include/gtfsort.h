@@ -1,3 +1,5 @@
+#pragma once
+
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -16,8 +18,6 @@
 #define GTFSORT_ERROR_IO_ERROR 5
 
 #define GTFSORT_ERROR_PARSE_ERROR 3
-
-typedef SEXP RObj;
 
 typedef struct SortAnnotationsJobResultFFI {
   const char *input;
@@ -53,14 +53,6 @@ typedef struct SortAnnotationsRet {
     };
   };
 } SortAnnotationsRet;
-
-void R_init_libgtfsort(DllInfo *dllinfo);
-
-SEXP gtfsort_R_init_logger(RObj level);
-
-SEXP gtfsort_R_sort_annotations(RObj input, RObj output, RObj threads);
-
-SEXP gtfsort_R_sort_annotations_string(RObj mode, RObj input, RObj output, RObj threads);
 
 void gtfsort_free_sort_annotations_ret(struct SortAnnotationsRet ret);
 

@@ -11,6 +11,9 @@ pub use utils::*;
 
 pub mod interop;
 
+#[cfg(feature = "testing")]
+pub mod test_utils;
+
 use std::{io, path::PathBuf};
 
 #[cfg(feature = "mmap")]
@@ -71,6 +74,7 @@ pub fn sort_annotations<'a>(
     output: &'a PathBuf,
     threads: usize,
 ) -> Result<SortAnnotationsJobResult<'a>, GtfSortError> {
+    assert!(threads > 0, "Invalid number of threads");
     let mut ret = SortAnnotationsJobResult {
         input: input.to_str().ok_or(GtfSortError::InvalidInput(
             "Invalid input file path".to_string(),
@@ -259,6 +263,7 @@ pub fn sort_annotations_string<'a, const SEP: u8, OF: FnMut(&[u8]) -> io::Result
     output: &mut OF,
     threads: usize,
 ) -> Result<SortAnnotationsJobResult<'a>, GtfSortError> {
+    assert!(threads > 0, "Invalid number of threads");
     let mut ret = SortAnnotationsJobResult {
         input: "[string]",
         output: "[callback]",
