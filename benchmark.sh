@@ -2,22 +2,27 @@
 
 set -e
 
+COMPARE_TO="origin/master"
+
+if [ -n "$1" ]; then
+  COMPARE_TO="$1"
+fi
+
 TEST_FILE="tests/gencode.v46.chr_patch_hapl_scaff.annotation.gff3"
 TEST_URL="https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/gencode.v46.chr_patch_hapl_scaff.annotation.gff3.gz"
-BENCHMARK_TARGETS=(
-  "base=48362e13d651be64e4f1f10c725519973dc8dc9a"
-  "nocopy=fa29008f7e1924c377d83d0d1247b1cf46c40f39"
-  "mmap=dce6085093662c99f9b0fe1e1447c005b84f48fd"
-  "mmapwrite=b31cf26a4fe05f24474aabda3c898e92e9f86562"
-)
 STDOUT_FILE="tests/benchmark-output.txt"
 
 mkdir -p tests
 
-previous_location=$(git rev-parse --abbrev-ref HEAD)
+current_location=$(git rev-parse --abbrev-ref HEAD)
 
 # shellcheck disable=SC2064
-trap "git checkout '$previous_location'" EXIT
+trap "git checkout '$current_location'" EXIT
+
+BENCHMARK_TARGETS=(
+  "base=${COMPARE_TO}"
+  "current=${current_location}"
+)
 
 if [ ! -f "$TEST_FILE" ]; then
     curl -LsS $TEST_URL | gzip -d > $TEST_FILE

@@ -38,6 +38,10 @@ impl<'a, T> MemoryMap<'a, T> {
         }
     }
 
+    pub fn size_bytes(&self) -> usize {
+        self.size
+    }
+
     pub fn as_slice(&self) -> &[T] {
         unsafe { std::slice::from_raw_parts(self.ptr, self.size / std::mem::size_of::<T>()) }
     }
@@ -45,6 +49,7 @@ impl<'a, T> MemoryMap<'a, T> {
     pub fn madvise(&self, advice: &[Madvice]) -> Result<(), std::io::Error> {
         #[cfg(unix)]
         {
+            #[allow(unreachable_patterns)]
             let advice = advice.iter().fold(0, |acc, &a| {
                 acc | match a {
                     Madvice::Normal => libc::MADV_NORMAL,
@@ -52,7 +57,9 @@ impl<'a, T> MemoryMap<'a, T> {
                     Madvice::Sequential => libc::MADV_SEQUENTIAL,
                     Madvice::WillNeed => libc::MADV_WILLNEED,
                     Madvice::DontNeed => libc::MADV_DONTNEED,
+                    #[cfg(target_os = "linux")]
                     Madvice::HugePage => libc::MADV_HUGEPAGE,
+                    _ => 0,
                 }
             });
 
@@ -203,6 +210,7 @@ impl<'a, T> MemoryMapMut<'a, T> {
     pub fn madvise(&self, advice: &[Madvice]) -> Result<(), std::io::Error> {
         #[cfg(unix)]
         {
+            #[allow(unreachable_patterns)]
             let advice = advice.iter().fold(0, |acc, &a| {
                 acc | match a {
                     Madvice::Normal => libc::MADV_NORMAL,
@@ -210,7 +218,9 @@ impl<'a, T> MemoryMapMut<'a, T> {
                     Madvice::Sequential => libc::MADV_SEQUENTIAL,
                     Madvice::WillNeed => libc::MADV_WILLNEED,
                     Madvice::DontNeed => libc::MADV_DONTNEED,
+                    #[cfg(target_os = "linux")]
                     Madvice::HugePage => libc::MADV_HUGEPAGE,
+                    _ => 0,
                 }
             });
 
