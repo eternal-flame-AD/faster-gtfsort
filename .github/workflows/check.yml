@@ -36,18 +36,18 @@ jobs:
 
       - name: Cargo Test with --no-default-features
         if: ${{ startsWith(matrix.os, 'windows') }}
-        run: $env:RUST_BACKTRACE="full"; cargo test --no-default-features
+        run: $env:RUST_BACKTRACE="full"; cargo test --no-default-features -- --nocapture
 
       - name: Cargo Test with --no-default-features
         # saves time on more expensive machines
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
-        run: RUST_BACKTRACE=full cargo test --no-default-features
+        run: RUST_BACKTRACE=full cargo test --no-default-features -- --nocapture
       
       - name: Cargo Test with --all-features
         if: ${{ startsWith(matrix.os, 'windows') }}
-        run: $env:RUST_BACKTRACE="full"; cargo test --all-features
+        run: $env:RUST_BACKTRACE="full"; cargo test --all-features -- --nocapture
       
       - name: Cargo Test with --all-features
         if: ${{ startsWith(matrix.os, 'windows') != true }}
-        run: RUST_BACKTRACE=full cargo test --all-features 
+        run: RUST_BACKTRACE=full cargo test --all-features -- --nocapture
   

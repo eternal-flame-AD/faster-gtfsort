@@ -273,7 +273,7 @@ fn test_gencode_m35_subset_with_n_threads(nthreads: usize, prevent_mmap: bool) {
                     "{}_{}_{}.sorted",
                     input.file_stem().unwrap().to_str().unwrap(),
                     nthreads,
-                    current_func!(),
+                    current_func!().replace(|c: char| !c.is_alphanumeric(), "_")
                 )
                 .as_str(),
                 true,
