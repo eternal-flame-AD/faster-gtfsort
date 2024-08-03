@@ -261,6 +261,8 @@ pub fn write_obj_mmaped<'a, P: AsRef<Path> + Debug>(
         j.output_mmaped = true;
     }
 
+    output_map.close()?;
+
     Ok(())
 }
 

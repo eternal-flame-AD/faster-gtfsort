@@ -15,7 +15,7 @@ pub enum Madvice {
     HugePage,
 }
 
-type CleanupFn<S> = Box<dyn FnOnce(&mut S)>;
+type CleanupFn<S> = Box<dyn FnOnce(&mut S) -> std::io::Result<()>>;
 
 pub struct MemoryMap<'a, T> {
     ptr: *const T,
@@ -106,7 +106,11 @@ impl<'a, T> MemoryMap<'a, T> {
             cleanup: Some(Box::new(move |this| unsafe {
                 let ret = libc::munmap(this.ptr as *mut _, this.size);
                 if ret == -1 {
-                    log::warn!("munmap error: {}", std::io::Error::last_os_error());
+                    let e = std::io::Error::last_os_error();
+                    log::warn!("munmap error: {}", e);
+                    Err(e)
+                } else {
+                    Ok(())
                 }
             })),
             _marker: PhantomData,
@@ -162,19 +166,27 @@ impl<'a, T> MemoryMap<'a, T> {
                 ptr: ptr.Value as *const T,
                 size: size.unwrap_or(0),
                 cleanup: Some(Box::new(move |_this| {
-                    UnmapViewOfFile(ptr).ok();
-                    CloseHandle(handle).ok();
+                    UnmapViewOfFile(ptr)?;
+                    CloseHandle(handle)?;
+                    Ok(())
                 })),
                 _marker: PhantomData,
             })
         }
+    }
+
+    pub fn close(mut self) -> Result<(), std::io::Error> {
+        if let Some(cleanup) = self.cleanup.take() {
+            cleanup(&mut self)?;
+        }
+        Ok(())
     }
 }
 
 impl<T> Drop for MemoryMap<'_, T> {
     fn drop(&mut self) {
         if let Some(cleanup) = self.cleanup.take() {
-            cleanup(self);
+            cleanup(self).expect("failed to unmap memory, and error was ignored");
         }
     }
 }
@@ -268,7 +280,11 @@ impl<'a, T> MemoryMapMut<'a, T> {
             cleanup: Some(Box::new(move |this| unsafe {
                 let ret = libc::munmap(this.ptr as *mut _, this.size);
                 if ret == -1 {
-                    eprintln!("munmap failed: {}", std::io::Error::last_os_error());
+                    let e = std::io::Error::last_os_error();
+                    eprintln!("munmap failed: {}", e);
+                    Err(e)
+                } else {
+                    Ok(())
                 }
             })),
             _marker: PhantomData,
@@ -323,19 +339,27 @@ impl<'a, T> MemoryMapMut<'a, T> {
                 ptr: ptr.Value as *mut T,
                 size: size.unwrap_or(0),
                 cleanup: Some(Box::new(move |_this| {
-                    UnmapViewOfFile(ptr).ok();
-                    CloseHandle(handle).ok();
+                    UnmapViewOfFile(ptr)?;
+                    CloseHandle(handle)?;
+                    Ok(())
                 })),
                 _marker: PhantomData,
             })
         }
+    }
+
+    pub fn close(mut self) -> Result<(), std::io::Error> {
+        if let Some(cleanup) = self.cleanup.take() {
+            cleanup(&mut self)?;
+        }
+        Ok(())
     }
 }
 
 impl<T> Drop for MemoryMapMut<'_, T> {
     fn drop(&mut self) {
         if let Some(cleanup) = self.cleanup.take() {
-            cleanup(self);
+            cleanup(self).expect("failed to unmap memory, and error was ignored");
         }
     }
 }

@@ -240,6 +240,15 @@ pub fn sort_annotations<'a>(
         .map_err(|e| GtfSortError::IoError("writing output file", e))?;
         ret.writing_secs = writing_secs;
 
+        drop(records);
+        drop(index);
+
+        #[cfg(feature = "mmap")]
+        if let Ok(m) = mmap_result {
+            m.close()
+                .map_err(|e| GtfSortError::IoError("syncing memory map", e))?;
+        }
+
         ret.end_mem_mb = Some(max_mem_usage_mb());
 
         Ok(ret)
