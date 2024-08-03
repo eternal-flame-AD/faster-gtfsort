@@ -12,6 +12,10 @@ TEST_FILE="tests/gencode.v46.chr_patch_hapl_scaff.annotation.gff3"
 TEST_URL="https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_46/gencode.v46.chr_patch_hapl_scaff.annotation.gff3.gz"
 STDOUT_FILE="tests/benchmark-output.txt"
 
+if [ -z "$NUM_THREADS" ]; then
+  NUM_THREADS=4
+fi
+
 mkdir -p tests
 
 current_location=$(git rev-parse --abbrev-ref HEAD)
@@ -46,7 +50,7 @@ hyperfine --warmup 3 --min-runs 5 \
     --setup "short_name=\$(echo '{commit}' | cut -d= -f1); git checkout -B benchmark \$(echo '{commit}' | cut -d= -f2) && cargo build --release" \
     --cleanup 'cargo clean' \
     "$@" \
-    "short_name=\$(echo '{commit}' | cut -d= -f1); target/release/gtfsort -i '$TEST_FILE' -o tests/sink.gff3 -t 16 2>&1 | awk -v name=\$short_name '{ print \"[\"name\" -> sink] \" \$0 }' | tee -a '$STDOUT_FILE'"
+    "short_name=\$(echo '{commit}' | cut -d= -f1); target/release/gtfsort -i '$TEST_FILE' -o tests/sink.gff3 -t ${NUM_THREADS} 2>&1 | awk -v name=\$short_name '{ print \"[\"name\" -> sink] \" \$0 }' | tee -a '$STDOUT_FILE'"
 
 # shellcheck disable=SC1083,SC2016
 hyperfine --warmup 3 --min-runs 5 \
@@ -56,4 +60,4 @@ hyperfine --warmup 3 --min-runs 5 \
     --setup "short_name=\$(echo '{commit}' | cut -d= -f1); git checkout -B benchmark \$(echo '{commit}' | cut -d= -f2) && cargo build --release" \
     --cleanup 'cargo clean' \
     "$@" \
-    "short_name=\$(echo '{commit}' | cut -d= -f1); target/release/gtfsort -i '$TEST_FILE' -o tests/output_\${short_name}.gff3 -t 16 2>&1 | awk -v name=\$short_name '{ print \"[\"name\" -> file] \" \$0 }' | tee -a '$STDOUT_FILE'"
+    "short_name=\$(echo '{commit}' | cut -d= -f1); target/release/gtfsort -i '$TEST_FILE' -o tests/output_\${short_name}.gff3 -t ${NUM_THREADS} 2>&1 | awk -v name=\$short_name '{ print \"[\"name\" -> file] \" \$0 }' | tee -a '$STDOUT_FILE'"
