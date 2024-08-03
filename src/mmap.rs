@@ -46,30 +46,33 @@ impl<'a, T> MemoryMap<'a, T> {
         unsafe { std::slice::from_raw_parts(self.ptr, self.size / std::mem::size_of::<T>()) }
     }
 
+    #[cfg(unix)]
     pub fn madvise(&self, advice: &[Madvice]) -> Result<(), std::io::Error> {
-        #[cfg(unix)]
-        {
-            #[allow(unreachable_patterns)]
-            let advice = advice.iter().fold(0, |acc, &a| {
-                acc | match a {
-                    Madvice::Normal => libc::MADV_NORMAL,
-                    Madvice::Random => libc::MADV_RANDOM,
-                    Madvice::Sequential => libc::MADV_SEQUENTIAL,
-                    Madvice::WillNeed => libc::MADV_WILLNEED,
-                    Madvice::DontNeed => libc::MADV_DONTNEED,
-                    #[cfg(target_os = "linux")]
-                    Madvice::HugePage => libc::MADV_HUGEPAGE,
-                    _ => 0,
-                }
-            });
-
-            let ret = unsafe { libc::madvise(self.ptr as *mut _, self.size, advice) };
-
-            if ret == -1 {
-                return Err(std::io::Error::last_os_error());
+        #[allow(unreachable_patterns)]
+        let advice = advice.iter().fold(0, |acc, &a| {
+            acc | match a {
+                Madvice::Normal => libc::MADV_NORMAL,
+                Madvice::Random => libc::MADV_RANDOM,
+                Madvice::Sequential => libc::MADV_SEQUENTIAL,
+                Madvice::WillNeed => libc::MADV_WILLNEED,
+                Madvice::DontNeed => libc::MADV_DONTNEED,
+                #[cfg(target_os = "linux")]
+                Madvice::HugePage => libc::MADV_HUGEPAGE,
+                _ => 0,
             }
+        });
+
+        let ret = unsafe { libc::madvise(self.ptr as *mut _, self.size, advice) };
+
+        if ret == -1 {
+            return Err(std::io::Error::last_os_error());
         }
 
+        Ok(())
+    }
+
+    #[cfg(not(unix))]
+    pub fn madvise(&self, _advice: &[Madvice]) -> Result<(), std::io::Error> {
         Ok(())
     }
 
@@ -155,13 +158,11 @@ impl<'a, T> MemoryMap<'a, T> {
                 return Err(std::io::Error::last_os_error());
             }
 
-            let ptr_clone = ptr.clone();
-
             Ok(Self {
                 ptr: ptr.Value as *const T,
                 size: size.unwrap_or(0),
                 cleanup: Some(Box::new(move |_this| {
-                    UnmapViewOfFile(ptr_clone).ok();
+                    UnmapViewOfFile(ptr).ok();
                     CloseHandle(handle).ok();
                 })),
                 _marker: PhantomData,
@@ -207,30 +208,33 @@ impl<'a, T> MemoryMapMut<'a, T> {
         unsafe { std::slice::from_raw_parts_mut(self.ptr, self.size / std::mem::size_of::<T>()) }
     }
 
+    #[cfg(unix)]
     pub fn madvise(&self, advice: &[Madvice]) -> Result<(), std::io::Error> {
-        #[cfg(unix)]
-        {
-            #[allow(unreachable_patterns)]
-            let advice = advice.iter().fold(0, |acc, &a| {
-                acc | match a {
-                    Madvice::Normal => libc::MADV_NORMAL,
-                    Madvice::Random => libc::MADV_RANDOM,
-                    Madvice::Sequential => libc::MADV_SEQUENTIAL,
-                    Madvice::WillNeed => libc::MADV_WILLNEED,
-                    Madvice::DontNeed => libc::MADV_DONTNEED,
-                    #[cfg(target_os = "linux")]
-                    Madvice::HugePage => libc::MADV_HUGEPAGE,
-                    _ => 0,
-                }
-            });
-
-            let ret = unsafe { libc::madvise(self.ptr as *mut _, self.size, advice) };
-
-            if ret == -1 {
-                return Err(std::io::Error::last_os_error());
+        #[allow(unreachable_patterns)]
+        let advice = advice.iter().fold(0, |acc, &a| {
+            acc | match a {
+                Madvice::Normal => libc::MADV_NORMAL,
+                Madvice::Random => libc::MADV_RANDOM,
+                Madvice::Sequential => libc::MADV_SEQUENTIAL,
+                Madvice::WillNeed => libc::MADV_WILLNEED,
+                Madvice::DontNeed => libc::MADV_DONTNEED,
+                #[cfg(target_os = "linux")]
+                Madvice::HugePage => libc::MADV_HUGEPAGE,
+                _ => 0,
             }
+        });
+
+        let ret = unsafe { libc::madvise(self.ptr as *mut _, self.size, advice) };
+
+        if ret == -1 {
+            return Err(std::io::Error::last_os_error());
         }
 
+        Ok(())
+    }
+
+    #[cfg(not(unix))]
+    pub fn madvise(&self, _advice: &[Madvice]) -> Result<(), std::io::Error> {
         Ok(())
     }
 
@@ -315,13 +319,11 @@ impl<'a, T> MemoryMapMut<'a, T> {
                 return Err(std::io::Error::last_os_error());
             }
 
-            let ptr_clone = ptr.clone();
-
             Ok(Self {
                 ptr: ptr.Value as *mut T,
                 size: size.unwrap_or(0),
                 cleanup: Some(Box::new(move |_this| {
-                    UnmapViewOfFile(ptr_clone).ok();
+                    UnmapViewOfFile(ptr).ok();
                     CloseHandle(handle).ok();
                 })),
                 _marker: PhantomData,
