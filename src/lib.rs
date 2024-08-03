@@ -15,8 +15,6 @@ use std::{io, path::PathBuf};
 
 #[cfg(feature = "mmap")]
 use mmap::Madvice;
-#[cfg(all(feature = "mmap", unix))]
-use std::os::unix::fs::MetadataExt;
 #[cfg(feature = "mmap")]
 use std::{borrow::Cow, fs::File};
 
@@ -114,22 +112,23 @@ pub fn sort_annotations<'a>(
         let f = File::open(input).map_err(|e| GtfSortError::IoError("opening input file", e))?;
 
         #[cfg(feature = "mmap")]
+        let f_size = f
+            .metadata()
+            .map_err(|e| GtfSortError::IoError("getting input file metadata", e))?
+            .len();
+
+        #[cfg(feature = "mmap")]
         let mmap_result = (|| {
             #[cfg(feature = "mmap")]
             #[cfg(unix)]
             let contents_map = unsafe {
-                mmap::MemoryMap::<u8>::from_file(
-                    &f,
-                    f.metadata()
-                        .map_err(|e| GtfSortError::IoError("getting input file metadata", e))?
-                        .size() as usize,
-                )
-                .map_err(|e| GtfSortError::IoError("mapping input file to memory", e))?
+                mmap::MemoryMap::<u8>::from_file(&f, f_size as usize)
+                    .map_err(|e| GtfSortError::IoError("mapping input file to memory", e))?
             };
 
             #[cfg(windows)]
             let contents_map = unsafe {
-                mmap::MemoryMap::<u8>::from_handle(&f, None)
+                mmap::MemoryMap::<u8>::from_handle(&f, f_size as usize)
                     .map_err(|e| GtfSortError::IoError("mapping input file to memory", e))?
             };
 

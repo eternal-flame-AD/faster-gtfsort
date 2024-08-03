@@ -196,13 +196,17 @@ pub fn write_obj_mmaped<'a, P: AsRef<Path> + Debug>(
 
     let size = keys.iter().map(|(_, i)| *i as u64).sum();
 
+    if size == 0 {
+        return Ok(());
+    }
+
     f.set_len(size)?;
 
     #[cfg(unix)]
     let mut output_map = unsafe { mmap::MemoryMapMut::from_file(&f, size as usize)? };
 
     #[cfg(windows)]
-    let mut output_map = unsafe { mmap::MemoryMapMut::from_handle(&f, Some(size as usize))? };
+    let mut output_map = unsafe { mmap::MemoryMapMut::from_handle(&f, size as usize)? };
 
     match output_map.madvise(&[Madvice::Random]) {
         Ok(_) => (),

@@ -5,6 +5,20 @@ compile_error!(
     "mmap is only supported on Unix and Windows platforms, please compile without the mmap feature"
 );
 
+#[cfg(windows)]
+macro_rules! high32 {
+    ($x:expr) => {
+        ($x >> 32) as u32
+    };
+}
+
+#[cfg(windows)]
+macro_rules! low32 {
+    ($x:expr) => {
+        $x as u32
+    };
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Madvice {
     Normal,
@@ -124,7 +138,7 @@ impl<'a, T> MemoryMap<'a, T> {
     /// handle must be a valid file handle.
     /// The file handle must be open and readable.
     /// Size must be a valid size for the file handle.
-    pub unsafe fn from_handle<F>(handle: &'a F, size: Option<usize>) -> Result<Self, std::io::Error>
+    pub unsafe fn from_handle<F>(handle: &'a F, size: usize) -> Result<Self, std::io::Error>
     where
         F: std::os::windows::io::AsRawHandle,
     {
@@ -141,22 +155,16 @@ impl<'a, T> MemoryMap<'a, T> {
                 HANDLE(handle.as_raw_handle()),
                 None,
                 PAGE_READONLY,
-                size.unwrap_or(0) as u32,
-                0,
-                w!("GFF3_MMAP"),
+                high32!(size),
+                low32!(size),
+                PCWSTR::null(),
             )?;
 
             if handle.0.is_null() {
                 return Err(std::io::Error::last_os_error());
             }
 
-            let ptr = MapViewOfFile(
-                handle,
-                FILE_MAP_READ | FILE_MAP_LARGE_PAGES,
-                0,
-                0,
-                size.unwrap_or(0),
-            );
+            let ptr = MapViewOfFile(handle, FILE_MAP_READ, 0, 0, size);
 
             if ptr.Value.is_null() {
                 return Err(std::io::Error::last_os_error());
@@ -164,7 +172,7 @@ impl<'a, T> MemoryMap<'a, T> {
 
             Ok(Self {
                 ptr: ptr.Value as *const T,
-                size: size.unwrap_or(0),
+                size,
                 cleanup: Some(Box::new(move |_this| {
                     UnmapViewOfFile(ptr)?;
                     CloseHandle(handle)?;
@@ -297,7 +305,7 @@ impl<'a, T> MemoryMapMut<'a, T> {
     /// handle must be a valid file handle.
     /// The file handle must be open and writable.
     /// Size must be a valid size for the file handle.
-    pub unsafe fn from_handle<F>(handle: &'a F, size: Option<usize>) -> Result<Self, std::io::Error>
+    pub unsafe fn from_handle<F>(handle: &'a F, size: usize) -> Result<Self, std::io::Error>
     where
         F: std::os::windows::io::AsRawHandle,
     {
@@ -314,22 +322,16 @@ impl<'a, T> MemoryMapMut<'a, T> {
                 HANDLE(handle.as_raw_handle()),
                 None,
                 PAGE_READWRITE,
-                size.unwrap_or(0) as u32,
-                0,
-                w!("GFF3_MMAP_WRITE"),
+                high32!(size),
+                low32!(size),
+                PCWSTR::null(),
             )?;
 
             if handle.0.is_null() {
                 return Err(std::io::Error::last_os_error());
             }
 
-            let ptr = MapViewOfFile(
-                handle,
-                FILE_MAP_WRITE | FILE_MAP_LARGE_PAGES,
-                0,
-                0,
-                size.unwrap_or(0),
-            );
+            let ptr = MapViewOfFile(handle, FILE_MAP_WRITE, 0, 0, size);
 
             if ptr.Value.is_null() {
                 return Err(std::io::Error::last_os_error());
@@ -337,7 +339,7 @@ impl<'a, T> MemoryMapMut<'a, T> {
 
             Ok(Self {
                 ptr: ptr.Value as *mut T,
-                size: size.unwrap_or(0),
+                size,
                 cleanup: Some(Box::new(move |_this| {
                     UnmapViewOfFile(ptr)?;
                     CloseHandle(handle)?;
