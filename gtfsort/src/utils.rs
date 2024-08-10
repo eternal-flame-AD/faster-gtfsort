@@ -14,7 +14,7 @@ use indoc::indoc;
 use log::info;
 
 use crate::gtf::Record;
-use crate::ord::CowNaturalSort;
+use crate::ord::{NaturalSort, OrdChain3};
 use crate::SortAnnotationsJobResult;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -63,7 +63,7 @@ pub struct Layers<'a> {
     // gene_id -> [transcript_id, transcript_id, ...]
     pub mapper: HashMap<&'a str, Vec<&'a str>>,
     // transcript_id -> {feat -> line}
-    pub inner: HashMap<&'a str, BTreeMap<CowNaturalSort<'a>, Vec<&'a str>>>,
+    pub inner: HashMap<&'a str, BTreeMap<OrdChain3<i8, NaturalSort<&'a str>, char>, Vec<&'a str>>>,
     // transcript_id -> line
     pub helper: HashMap<&'a str, &'a str>,
 }

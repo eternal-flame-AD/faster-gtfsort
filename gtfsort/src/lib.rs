@@ -3,9 +3,9 @@ pub mod gtf;
 pub use gtf::Record;
 
 pub mod ord;
-pub use ord::CowNaturalSort;
 
 pub mod utils;
+use ord::{NaturalSort, OrdChain3};
 pub use utils::*;
 
 pub mod interop;
@@ -206,7 +206,7 @@ pub fn sort_annotations<'a>(
                         "CDS" | "exon" | "start_codon" | "stop_codon" => {
                             let (exon_number, suffix) = line.inner_layer();
                             acc.inner.entry(line.transcript_id).or_default().insert(
-                                CowNaturalSort::new(format!("{}{}", exon_number, suffix).into()),
+                                OrdChain3::new(0, NaturalSort(exon_number), suffix),
                                 vec![line.line],
                             );
                         }
@@ -214,7 +214,7 @@ pub fn sort_annotations<'a>(
                             acc.inner
                                 .entry(line.transcript_id)
                                 .or_default()
-                                .entry(CowNaturalSort::new(line.feat.into()))
+                                .entry(OrdChain3::new(1, NaturalSort(line.feat), '\0'))
                                 .and_modify(|e| {
                                     e.push(line.line);
                                 })
@@ -311,7 +311,7 @@ pub fn sort_annotations_string<'a, const SEP: u8, OF: FnMut(&[u8]) -> io::Result
                         "CDS" | "exon" | "start_codon" | "stop_codon" => {
                             let (exon_number, suffix) = line.inner_layer();
                             acc.inner.entry(line.transcript_id).or_default().insert(
-                                CowNaturalSort::new(format!("{}{}", exon_number, suffix).into()),
+                                OrdChain3::new(0, NaturalSort(exon_number), suffix),
                                 vec![line.line],
                             );
                         }
@@ -319,7 +319,7 @@ pub fn sort_annotations_string<'a, const SEP: u8, OF: FnMut(&[u8]) -> io::Result
                             acc.inner
                                 .entry(line.transcript_id)
                                 .or_default()
-                                .entry(CowNaturalSort::new(line.feat.into()))
+                                .entry(OrdChain3::new(1, NaturalSort(line.feat), '\0'))
                                 .and_modify(|e| {
                                     e.push(line.line);
                                 })
