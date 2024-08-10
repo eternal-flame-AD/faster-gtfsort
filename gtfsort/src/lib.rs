@@ -5,6 +5,7 @@ pub use gtf::Record;
 pub mod ord;
 
 pub mod utils;
+use itertools::Itertools;
 use ord::NaturalSort;
 pub use utils::*;
 
@@ -185,67 +186,29 @@ pub fn sort_annotations<'a>(
             .map_err(GtfSortError::ParseError)
         })?;
 
-        let index = DashMap::<&str, Layers>::new();
+        let index = DashMap::<&str, ChromTreeSorted>::new();
 
         timed("building index", Some(&mut ret.indexing_secs), || {
-            records.par_iter().for_each(|(chrom, lines)| {
-                let mut acc = Layers::default();
+            records.into_par_iter().for_each(|(chrom, lines)| {
+                let mut tree = ChromTree::default();
+                lines.into_iter().for_each(|rec| tree.push_record(rec));
 
-                for line in lines {
-                    match line.feat {
-                        "gene" => {
-                            acc.layer.push(line.outer_layer());
-                        }
-                        "transcript" => {
-                            acc.mapper
-                                .entry(line.gene_id)
-                                .or_default()
-                                .push(line.transcript_id);
-                            acc.helper.entry(line.transcript_id).or_insert(line.line);
-                        }
-                        "CDS" | "exon" | "start_codon" | "stop_codon" => {
-                            let (exon_number, suffix) = line.inner_layer();
-                            acc.inner
-                                .entry(line.transcript_id)
-                                .or_default()
-                                .insert((0, NaturalSort(exon_number), suffix), vec![line.line]);
-                        }
-                        _ => {
-                            acc.inner
-                                .entry(line.transcript_id)
-                                .or_default()
-                                .entry((1, NaturalSort(line.feat), '\0'))
-                                .and_modify(|e| {
-                                    e.push(line.line);
-                                })
-                                .or_insert(vec![line.line]);
-                        }
-                    }
-                }
-
-                acc.layer.par_sort_unstable_by_key(|x| x.0);
-                index.insert(chrom, acc);
+                index.insert(chrom, tree.into_sorted());
             })
         });
 
-        let mut keys: Vec<&str> = index.iter().map(|x| *x.key()).collect();
-        keys.sort_by(|a, b| natord::compare(a, b));
+        let index = index
+            .into_iter()
+            .sorted_by_key(|(name, _)| NaturalSort(*name))
+            .collect_vec();
 
         let mut writing_secs = 0.0;
         timed("Writing output", Some(&mut writing_secs), || {
-            write_obj(
-                output,
-                &index,
-                keys.iter()
-                    .map(|chr| (*chr, index.get(chr).unwrap().count_line_size()))
-                    .collect::<Vec<_>>(),
-                &mut Some(&mut ret),
-            )
+            write_obj(output, &index, &mut Some(&mut ret))
         })
         .map_err(|e| GtfSortError::IoError("writing output file", e))?;
         ret.writing_secs = writing_secs;
 
-        drop(records);
         drop(index);
 
         #[cfg(feature = "mmap")]
@@ -284,8 +247,9 @@ pub fn sort_annotations_string<'a, const SEP: u8, OF: FnMut(&[u8]) -> io::Result
         .build()
         .expect("Failed to build thread pool");
 
-    let index = DashMap::<&str, Layers>::new();
-    let keys = tp.install(|| {
+    let index = DashMap::<&str, ChromTreeSorted>::new();
+
+    tp.install(|| {
         ret.start_mem_mb = Some(max_mem_usage_mb());
 
         let records = timed("Parsing input", Some(&mut ret.parsing_secs), || {
@@ -293,62 +257,25 @@ pub fn sort_annotations_string<'a, const SEP: u8, OF: FnMut(&[u8]) -> io::Result
         })?;
 
         timed("Building index", Some(&mut ret.indexing_secs), || {
-            records.par_iter().for_each(|(chrom, lines)| {
-                let mut acc = Layers::default();
+            records.into_par_iter().for_each(|(chrom, lines)| {
+                let mut tree = ChromTree::default();
+                lines.into_iter().for_each(|rec| tree.push_record(rec));
 
-                for line in lines {
-                    match line.feat {
-                        "gene" => {
-                            acc.layer.push(line.outer_layer());
-                        }
-                        "transcript" => {
-                            acc.mapper
-                                .entry(line.gene_id)
-                                .or_default()
-                                .push(line.transcript_id);
-                            acc.helper.entry(line.transcript_id).or_insert(line.line);
-                        }
-                        "CDS" | "exon" | "start_codon" | "stop_codon" => {
-                            let (exon_number, suffix) = line.inner_layer();
-                            acc.inner
-                                .entry(line.transcript_id)
-                                .or_default()
-                                .insert((0, NaturalSort(exon_number), suffix), vec![line.line]);
-                        }
-                        _ => {
-                            acc.inner
-                                .entry(line.transcript_id)
-                                .or_default()
-                                .entry((1, NaturalSort(line.feat), '\0'))
-                                .and_modify(|e| {
-                                    e.push(line.line);
-                                })
-                                .or_insert(vec![line.line]);
-                        }
-                    }
-                }
-
-                acc.layer.par_sort_unstable_by_key(|x| x.0);
-                index.insert(chrom, acc);
-            });
+                index.insert(chrom, tree.into_sorted());
+            })
         });
 
-        let mut keys: Vec<&str> = index.iter().map(|x| *x.key()).collect();
-        keys.sort_by(|a, b| natord::compare(a, b));
-
-        Ok(keys)
+        Ok(())
     })?;
 
+    let index = index
+        .into_iter()
+        .sorted_by_key(|(name, _)| NaturalSort(*name))
+        .collect_vec();
+
     let mut writer = ChunkWriter::new(output);
-    write_obj_sequential(
-        &mut writer,
-        &index,
-        keys.iter()
-            .map(|chr| (*chr, index.get(chr).unwrap().count_line_size()))
-            .collect::<Vec<_>>(),
-        &mut None,
-    )
-    .map_err(|e| GtfSortError::IoError("writing output file", e))?;
+    write_obj_sequential(&mut writer, &index, &mut None)
+        .map_err(|e| GtfSortError::IoError("writing output file", e))?;
 
     ret.end_mem_mb = Some(max_mem_usage_mb());
 

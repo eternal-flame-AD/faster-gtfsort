@@ -1,9 +1,9 @@
 use hashbrown::HashMap;
+use itertools::Itertools;
 use rayon::prelude::*;
 
 use colored::Colorize;
 
-use dashmap::DashMap;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::fs::File;
@@ -56,44 +56,149 @@ pub fn timed<T, F: FnOnce() -> T>(key: &str, output: Option<&mut f64>, f: F) -> 
     res
 }
 
-#[derive(Debug)]
-pub struct Layers<'a> {
-    // (start, gene_id, line)
-    pub layer: Vec<(u32, &'a str, &'a str)>,
-    // gene_id -> [transcript_id, transcript_id, ...]
-    pub mapper: HashMap<&'a str, Vec<&'a str>>,
-    // transcript_id -> {feat -> line}
-    pub inner: HashMap<&'a str, BTreeMap<(i8, NaturalSort<&'a str>, char), Vec<&'a str>>>,
-    // transcript_id -> line
-    pub helper: HashMap<&'a str, &'a str>,
+#[derive(Debug, Default)]
+pub struct ChromTree<'a> {
+    pub chrom: &'a str,
+    pub genes: HashMap<&'a str, GeneTree<'a>>,
 }
 
-impl<'a> Layers<'a> {
-    pub fn count_line_size(&self) -> usize {
-        let mut total = 0;
-
-        for i in self.layer.iter() {
-            total += i.2.len() + 1;
-            let transcripts = self.mapper.get(&i.1).unwrap();
-            for j in transcripts.iter() {
-                total += self.helper.get(j).unwrap().len() + 1;
-                let exons = self.inner.get(j).unwrap();
-                total += exons.values().flatten().map(|x| x.len() + 1).sum::<usize>();
-            }
+impl<'a> ChromTree<'a> {
+    pub fn into_sorted(self) -> ChromTreeSorted<'a> {
+        ChromTreeSorted {
+            chrom: self.chrom,
+            genes: self
+                .genes
+                .into_iter()
+                .map(|(_, v)| v.into_sorted())
+                .sorted_unstable_by_key(|x| (x.start_pos, x.end_pos))
+                .collect_vec(),
         }
-
-        total
     }
 }
 
-impl<'a> Default for Layers<'a> {
-    fn default() -> Self {
-        Self {
-            layer: Vec::new(),
-            mapper: HashMap::new(),
-            inner: HashMap::new(),
-            helper: HashMap::new(),
+#[derive(Debug, Default)]
+pub struct ChromTreeSorted<'a> {
+    pub chrom: &'a str,
+    pub genes: Vec<GeneTreeSorted<'a>>,
+}
+
+impl<'a> ChromTreeSorted<'a> {
+    pub fn count_line_size(&self) -> usize {
+        self.genes.iter().map(|x| x.count_line_size()).sum()
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct GeneTree<'a> {
+    pub start_pos: u32,
+    pub end_pos: u32,
+    pub gene_id: &'a str,
+    pub line: &'a str,
+    pub transcripts: HashMap<&'a str, TranscriptTree<'a>>,
+    pub original_transcript_order: Vec<&'a str>,
+}
+
+impl<'a> GeneTree<'a> {
+    pub fn into_sorted(mut self) -> GeneTreeSorted<'a> {
+        GeneTreeSorted {
+            start_pos: self.start_pos,
+            end_pos: self.end_pos,
+            gene_id: self.gene_id,
+            line: self.line,
+            transcripts: self
+                .original_transcript_order
+                .into_iter()
+                .map(|x| self.transcripts.remove(x).unwrap())
+                .collect(),
         }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct GeneTreeSorted<'a> {
+    pub start_pos: u32,
+    pub end_pos: u32,
+    pub gene_id: &'a str,
+    pub line: &'a str,
+    pub transcripts: Vec<TranscriptTree<'a>>,
+}
+
+#[derive(Debug, Default)]
+pub struct TranscriptTree<'a> {
+    pub transcript_id: &'a str,
+    pub start_pos: u32,
+    pub line: &'a str,
+    pub inner_feats: BTreeMap<(i8, NaturalSort<&'a str>, char), Vec<&'a str>>,
+}
+
+impl<'a> ChromTree<'a> {
+    pub fn push_record(&mut self, record: Record<'a>) {
+        match record.feat {
+            "gene" => {
+                let r = self.genes.entry(record.gene_id).or_default();
+                r.start_pos = record.start;
+                r.end_pos = record.end;
+                r.gene_id = record.gene_id;
+                r.line = record.line;
+            }
+            "transcript" => {
+                let r = self.genes.entry(record.gene_id).or_default();
+
+                r.original_transcript_order.push(record.transcript_id);
+                r.transcripts.insert(
+                    record.transcript_id,
+                    TranscriptTree {
+                        transcript_id: record.transcript_id,
+                        start_pos: record.start,
+                        line: record.line,
+                        inner_feats: BTreeMap::new(),
+                    },
+                );
+            }
+            "CDS" | "exon" | "start_codon" | "stop_codon" => {
+                let (exon_number, suffix) = record.inner_layer();
+                self.genes
+                    .entry(record.gene_id)
+                    .or_default()
+                    .transcripts
+                    .entry(record.transcript_id)
+                    .or_default()
+                    .inner_feats
+                    .entry((0, NaturalSort(&exon_number), suffix))
+                    .or_default()
+                    .push(record.line);
+            }
+            _ => {
+                self.genes
+                    .entry(record.gene_id)
+                    .or_default()
+                    .transcripts
+                    .entry(record.transcript_id)
+                    .or_default()
+                    .inner_feats
+                    .entry((1, NaturalSort(record.feat), '\0'))
+                    .or_default()
+                    .push(record.line);
+            }
+        }
+    }
+}
+
+impl<'a> GeneTreeSorted<'a> {
+    pub fn count_line_size(&self) -> usize {
+        let mut total = self.line.len() + 1;
+
+        for tree in self.transcripts.iter() {
+            total += tree.line.len() + 1;
+            total += tree
+                .inner_feats
+                .values()
+                .flatten()
+                .map(|x| x.len() + 1)
+                .sum::<usize>();
+        }
+
+        total
     }
 }
 
@@ -120,11 +225,10 @@ pub fn write_obj<'a, P: AsRef<Path> + Debug>(
 #[inline(always)]
 pub fn write_obj<'a, P: AsRef<Path> + Debug>(
     file: P,
-    obj: &DashMap<&'a str, Layers>,
-    keys: Vec<(&'a str, usize)>,
+    chroms: &[(&'a str, ChromTreeSorted<'a>)],
     job: &mut Option<&mut SortAnnotationsJobResult>,
 ) -> Result<(), io::Error> {
-    write_obj_mmaped(&file, obj, keys.clone(), job).or_else(move |e| {
+    write_obj_mmaped(&file, chroms, job).or_else(move |e| {
         log::warn!(
             "{} {}",
             "Error in mmaped output, falling back to sequential:"
@@ -141,37 +245,36 @@ pub fn write_obj<'a, P: AsRef<Path> + Debug>(
             }
         };
 
-        write_obj_sequential(f, obj, keys, job)
+        write_obj_sequential(f, chroms, job)
     })
 }
 
 pub fn write_obj_sequential<'a, W: Write>(
     file: W,
-    obj: &DashMap<&'a str, Layers>,
-    keys: Vec<(&'a str, usize)>,
+    chroms: &'a [(&'a str, ChromTreeSorted<'a>)],
     _job: &mut Option<&mut SortAnnotationsJobResult>,
 ) -> Result<(), io::Error> {
     use std::io::BufWriter;
 
     let mut output = BufWriter::new(file);
 
-    for (k, _) in keys {
-        let chr = obj.get(k).unwrap();
+    chroms.iter().try_for_each(|(_, chr)| {
+        chr.genes.iter().try_for_each(|gene| {
+            writeln!(output, "{}", gene.line)?;
 
-        for i in chr.layer.iter() {
-            writeln!(output, "{}", i.2)?;
+            gene.transcripts.iter().try_for_each(|transcript| {
+                writeln!(output, "{}", transcript.line)?;
 
-            let transcripts = chr.mapper.get(&i.1).unwrap();
-            for j in transcripts.iter() {
-                writeln!(output, "{}", chr.helper.get(j).unwrap())?;
-                let exons = chr.inner.get(j).unwrap();
-                exons
-                    .values()
-                    .flatten()
-                    .try_for_each(|x| writeln!(output, "{}", x))?;
-            }
-        }
-    }
+                transcript.inner_feats.iter().try_for_each(|(_, feats)| {
+                    feats
+                        .into_iter()
+                        .try_for_each(|feat| writeln!(output, "{}", feat))
+                })
+            })
+        })?;
+
+        Ok::<_, io::Error>(())
+    })?;
 
     output.flush()?;
 
@@ -181,8 +284,7 @@ pub fn write_obj_sequential<'a, W: Write>(
 #[cfg(feature = "mmap")]
 pub fn write_obj_mmaped<'a, P: AsRef<Path> + Debug>(
     file: P,
-    obj: &DashMap<&'a str, Layers>,
-    keys: Vec<(&'a str, usize)>,
+    chroms: &[(&'a str, ChromTreeSorted<'a>)],
     job: &mut Option<&mut SortAnnotationsJobResult>,
 ) -> Result<(), io::Error> {
     use std::{fs::OpenOptions, io::Cursor};
@@ -196,16 +298,21 @@ pub fn write_obj_mmaped<'a, P: AsRef<Path> + Debug>(
         .truncate(true)
         .open(file)?;
 
-    let size = keys.iter().map(|(_, i)| *i as u64).sum();
+    let size = chroms
+        .iter()
+        .map(|(_, chr)| chr.count_line_size())
+        .collect_vec();
 
-    if size == 0 {
+    let total_size = size.iter().sum::<usize>();
+
+    if total_size == 0 {
         return Ok(());
     }
 
-    f.set_len(size)?;
+    f.set_len(total_size as u64)?;
 
     #[cfg(unix)]
-    let mut output_map = unsafe { mmap::MemoryMapMut::from_file(&f, size as usize)? };
+    let mut output_map = unsafe { mmap::MemoryMapMut::from_file(&f, total_size)? };
 
     #[cfg(windows)]
     let mut output_map = unsafe { mmap::MemoryMapMut::from_handle(&f, size as usize)? };
@@ -225,34 +332,34 @@ pub fn write_obj_mmaped<'a, P: AsRef<Path> + Debug>(
     );
 
     let mut output_slices = Vec::new();
-    for (_, s) in keys.iter() {
-        let (a, b) = output.split_at_mut(*s);
+    for s in size {
+        let (a, b) = output.split_at_mut(s);
         output_slices.push(a);
         output = b;
     }
 
-    keys.into_iter()
+    chroms
+        .into_iter()
         .zip(output_slices)
         .collect::<Vec<_>>()
         .into_par_iter()
-        .try_for_each(|((k, size_expected), output)| {
-            let chr = obj.get(k).unwrap();
-
+        .try_for_each(|((_, chr), output)| {
+            let size_expected = output.len();
             let mut output = Cursor::new(output);
 
-            for i in chr.layer.iter() {
-                writeln!(output, "{}", i.2)?;
+            chr.genes.iter().try_for_each(|gene| {
+                writeln!(output, "{}", gene.line)?;
 
-                let transcripts = chr.mapper.get(&i.1).unwrap();
-                for j in transcripts.iter() {
-                    writeln!(output, "{}", chr.helper.get(j).unwrap())?;
-                    let exons = chr.inner.get(j).unwrap();
-                    exons
-                        .values()
-                        .flatten()
-                        .try_for_each(|x| writeln!(output, "{}", x))?;
-                }
-            }
+                gene.transcripts.iter().try_for_each(|transcript| {
+                    writeln!(output, "{}", transcript.line)?;
+
+                    transcript.inner_feats.iter().try_for_each(|(_, feats)| {
+                        feats
+                            .into_iter()
+                            .try_for_each(|feat| writeln!(output, "{}", feat))
+                    })
+                })
+            })?;
 
             assert_eq!(
                 output.position(),
