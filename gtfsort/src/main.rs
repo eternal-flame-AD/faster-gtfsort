@@ -162,8 +162,20 @@ fn run(args: Args) {
 
     let elapsed = start.elapsed().as_secs_f32();
     log::info!("Elapsed time: {:.4} seconds", elapsed);
+    #[cfg(not(feature = "mmap"))]
     log::info!(
         "Memory usage: {:.4} MB",
         job_info.end_mem_mb.unwrap_or(f64::NAN) - job_info.start_mem_mb.unwrap_or(f64::NAN)
     );
+    #[cfg(feature = "mmap")]
+    {
+        let peak_mmap = mmap::get_peak_mmap_size();
+        log::info!(
+            "Memory usage: {:.4} MB ({:.4} MB file mapped suppressed)",
+            job_info.end_mem_mb.unwrap_or(f64::NAN)
+                - job_info.start_mem_mb.unwrap_or(f64::NAN)
+                - peak_mmap as f64 / 1024.0 / 1024.0,
+            peak_mmap as f64 / 1024.0 / 1024.0
+        );
+    }
 }

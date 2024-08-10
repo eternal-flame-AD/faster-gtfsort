@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::atomic::AtomicUsize};
 
 #[cfg(all(not(unix), not(windows)))]
 compile_error!(
@@ -17,6 +17,60 @@ macro_rules! low32 {
     ($x:expr) => {
         $x as u32
     };
+}
+
+pub struct TotalSizeTracker {
+    peak: AtomicUsize,
+    current: AtomicUsize,
+}
+
+impl TotalSizeTracker {
+    pub fn add(&self, size: usize) {
+        let current = self
+            .current
+            .fetch_add(size, std::sync::atomic::Ordering::Relaxed)
+            + size;
+        loop {
+            let peak = self.peak.load(std::sync::atomic::Ordering::Relaxed);
+            if current > peak {
+                if self
+                    .peak
+                    .compare_exchange(
+                        peak,
+                        current,
+                        std::sync::atomic::Ordering::Relaxed,
+                        std::sync::atomic::Ordering::Relaxed,
+                    )
+                    .is_ok()
+                {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+    }
+    pub fn sub(&self, size: usize) {
+        self.current
+            .fetch_sub(size, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+static TOTAL_SIZE_TRACKER: TotalSizeTracker = TotalSizeTracker {
+    peak: AtomicUsize::new(0),
+    current: AtomicUsize::new(0),
+};
+
+pub fn get_current_mmap_size() -> usize {
+    TOTAL_SIZE_TRACKER
+        .current
+        .load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn get_peak_mmap_size() -> usize {
+    TOTAL_SIZE_TRACKER
+        .peak
+        .load(std::sync::atomic::Ordering::Relaxed)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,6 +98,7 @@ impl<'a, T> MemoryMap<'a, T> {
     /// # Safety
     /// ptr must be a valid pointer to a memory-mapped region of size bytes.
     pub unsafe fn new(ptr: *const T, size: usize) -> Self {
+        TOTAL_SIZE_TRACKER.add(size);
         Self {
             ptr,
             size,
@@ -130,6 +185,8 @@ impl<'a, T> MemoryMap<'a, T> {
             return Err(std::io::Error::last_os_error());
         }
 
+        TOTAL_SIZE_TRACKER.add(size);
+
         Ok(Self {
             ptr: ptr as *const T,
             size,
@@ -195,6 +252,8 @@ impl<'a, T> MemoryMap<'a, T> {
                 return Err(std::io::Error::last_os_error());
             }
 
+            TOTAL_SIZE_TRACKER.add(size);
+
             Ok(Self {
                 ptr: ptr.Value as *const T,
                 size,
@@ -212,6 +271,7 @@ impl<'a, T> MemoryMap<'a, T> {
         if let Some(cleanup) = self.cleanup.take() {
             cleanup(&mut self)?;
         }
+        TOTAL_SIZE_TRACKER.sub(self.size);
         Ok(())
     }
 }
@@ -219,6 +279,7 @@ impl<'a, T> MemoryMap<'a, T> {
 impl<T> Drop for MemoryMap<'_, T> {
     fn drop(&mut self) {
         if let Some(cleanup) = self.cleanup.take() {
+            TOTAL_SIZE_TRACKER.sub(self.size);
             cleanup(self).expect("failed to unmap memory, and error was ignored");
         }
     }
@@ -237,6 +298,7 @@ impl<'a, T> MemoryMapMut<'a, T> {
     /// # Safety
     /// ptr must be a valid pointer to a memory-mapped region of size bytes.
     pub unsafe fn new(ptr: *mut T, size: usize) -> Self {
+        TOTAL_SIZE_TRACKER.add(size);
         Self {
             ptr,
             size,
@@ -325,6 +387,8 @@ impl<'a, T> MemoryMapMut<'a, T> {
             return Err(std::io::Error::last_os_error());
         }
 
+        TOTAL_SIZE_TRACKER.add(size);
+
         Ok(Self {
             ptr: ptr as *mut T,
             size,
@@ -389,6 +453,8 @@ impl<'a, T> MemoryMapMut<'a, T> {
                 return Err(std::io::Error::last_os_error());
             }
 
+            TOTAL_SIZE_TRACKER.add(size);
+
             Ok(Self {
                 ptr: ptr.Value as *mut T,
                 size,
@@ -406,6 +472,7 @@ impl<'a, T> MemoryMapMut<'a, T> {
         if let Some(cleanup) = self.cleanup.take() {
             cleanup(&mut self)?;
         }
+        TOTAL_SIZE_TRACKER.sub(self.size);
         Ok(())
     }
 }
@@ -413,6 +480,7 @@ impl<'a, T> MemoryMapMut<'a, T> {
 impl<T> Drop for MemoryMapMut<'_, T> {
     fn drop(&mut self) {
         if let Some(cleanup) = self.cleanup.take() {
+            TOTAL_SIZE_TRACKER.sub(self.size);
             cleanup(self).expect("failed to unmap memory, and error was ignored");
         }
     }
