@@ -5,6 +5,7 @@ pub use gtf::Record;
 pub mod ord;
 
 pub mod utils;
+use hashbrown::HashMap;
 use itertools::Itertools;
 use ord::NaturalSort;
 pub use utils::*;
@@ -59,6 +60,7 @@ pub enum GtfSortError {
     InvalidParameter(&'static str),
 }
 
+#[derive(Debug, Clone)]
 pub struct SortAnnotationsJobResult<'a> {
     pub input: &'a str,
     pub output: &'a str,
@@ -72,6 +74,7 @@ pub struct SortAnnotationsJobResult<'a> {
     pub end_mem_mb: Option<f64>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn sort_annotations<'a>(
     input: &'a PathBuf,
     output: &'a PathBuf,
@@ -223,6 +226,7 @@ pub fn sort_annotations<'a>(
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn sort_annotations_string<'a, const SEP: u8, OF: FnMut(&[u8]) -> io::Result<usize>>(
     input: &'a str,
     output: &mut OF,
@@ -278,6 +282,46 @@ pub fn sort_annotations_string<'a, const SEP: u8, OF: FnMut(&[u8]) -> io::Result
         .map_err(|e| GtfSortError::IoError("writing output file", e))?;
 
     ret.end_mem_mb = Some(max_mem_usage_mb());
+
+    Ok(ret)
+}
+
+pub fn sort_annotations_string_sync<'a, const SEP: u8, OF: FnMut(&[u8]) -> io::Result<usize>>(
+    input: impl Iterator<Item = &'a str>,
+    output: &mut OF,
+) -> Result<SortAnnotationsJobResult<'a>, GtfSortError> {
+    let mut ret = SortAnnotationsJobResult {
+        input: "[string]",
+        output: "[callback]",
+        threads: 1,
+        input_mmaped: false,
+        output_mmaped: false,
+        parsing_secs: f64::NAN,
+        indexing_secs: f64::NAN,
+        writing_secs: f64::NAN,
+        start_mem_mb: None,
+        end_mem_mb: None,
+    };
+
+    let mut index = HashMap::<&str, ChromTreeSorted>::new();
+
+    let records = sequential_parse::<SEP>(input).map_err(GtfSortError::ParseError)?;
+
+    records.into_iter().for_each(|(chrom, lines)| {
+        let mut tree = ChromTree::default();
+        lines.into_iter().for_each(|rec| tree.push_record(rec));
+
+        index.insert(chrom, tree.into_sorted());
+    });
+
+    let index = index
+        .into_iter()
+        .sorted_by_key(|(name, _)| NaturalSort(*name))
+        .collect_vec();
+
+    let mut writer = ChunkWriter::new(output);
+    write_obj_sequential(&mut writer, &index, &mut Some(&mut ret))
+        .map_err(|e| GtfSortError::IoError("writing output file", e))?;
 
     Ok(ret)
 }

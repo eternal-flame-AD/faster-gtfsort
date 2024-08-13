@@ -65,8 +65,10 @@ jobs:
         with:
           name: build-artifacts-${{ matrix.os }}
           path: |
-            ./gtfsort/target/release/gtfsort
-            ./gtfsort/target/release/libgtfsort.so
+            ./target/release/gtfsort
+            ./target/release/libgtfsort.so
+            ./gtfsort/include/gtfsort.h
+            ./gtfsort/include/gtfsort.hxx
       
       - name: Upload Build Artifacts (macOS)
         if: ${{ startsWith(matrix.os, 'macos') && matrix.rust == 'stable' }}
@@ -74,8 +76,8 @@ jobs:
         with:
           name: build-artifacts-${{ matrix.os }}
           path: |
-            ./gtfsort/target/release/gtfsort
-            ./gtfsort/target/release/libgtfsort.dylib
+            ./target/release/gtfsort
+            ./target/release/libgtfsort.dylib
             ./gtfsort/include/gtfsort.h
             ./gtfsort/include/gtfsort.hxx
   
@@ -140,8 +142,8 @@ jobs:
           with:
             name: build-artifacts-windows
             path: |
-              ./gtfsort/target/x86_64-pc-windows-gnu/release/gtfsort.exe
-              ./gtfsort/target/x86_64-pc-windows-gnu/release/gtfsort.dll
+              ./target/x86_64-pc-windows-gnu/release/gtfsort.exe
+              ./target/x86_64-pc-windows-gnu/release/gtfsort.dll
               ./gtfsort/include/gtfsort.h
               ./gtfsort/include/gtfsort.hxx
         
@@ -217,7 +219,7 @@ jobs:
           GITHUB_REPO_OWNER: ${{ github.event.repository.owner.login }}
           GITHUB_REPO_NAME: ${{ github.event.repository.name }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./gtfsort/target/release/gtfsort-benchmark -r upstream/master -- --show-output
+        run: ./target/release/gtfsort-benchmark -r upstream/master -- --show-output
       
       - name: Upload Benchmark Results
         uses: actions/upload-artifact@v4

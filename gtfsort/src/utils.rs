@@ -164,7 +164,7 @@ impl<'a> ChromTree<'a> {
                     .entry(record.transcript_id)
                     .or_default()
                     .inner_feats
-                    .entry((0, NaturalSort(&exon_number), suffix))
+                    .entry((0, NaturalSort(exon_number), suffix))
                     .or_default()
                     .push(record.line);
             }
@@ -206,8 +206,7 @@ impl<'a> GeneTreeSorted<'a> {
 #[inline(always)]
 pub fn write_obj<'a, P: AsRef<Path> + Debug>(
     file: P,
-    obj: &DashMap<&'a str, Layers>,
-    keys: Vec<(&'a str, usize)>,
+    obj: &[(&'a str, ChromTreeSorted<'a>)],
     job: &mut Option<&mut SortAnnotationsJobResult>,
 ) -> Result<(), io::Error> {
     let f = match File::create(file) {
@@ -218,7 +217,7 @@ pub fn write_obj<'a, P: AsRef<Path> + Debug>(
         }
     };
 
-    write_obj_sequential(f, obj, keys, job)
+    write_obj_sequential(f, obj, job)
 }
 
 #[cfg(feature = "mmap")]
@@ -267,7 +266,7 @@ pub fn write_obj_sequential<'a, W: Write>(
 
                 transcript.inner_feats.iter().try_for_each(|(_, feats)| {
                     feats
-                        .into_iter()
+                        .iter()
                         .try_for_each(|feat| writeln!(output, "{}", feat))
                 })
             })
@@ -339,7 +338,7 @@ pub fn write_obj_mmaped<'a, P: AsRef<Path> + Debug>(
     }
 
     chroms
-        .into_iter()
+        .iter()
         .zip(output_slices)
         .collect::<Vec<_>>()
         .into_par_iter()
@@ -355,7 +354,7 @@ pub fn write_obj_mmaped<'a, P: AsRef<Path> + Debug>(
 
                     transcript.inner_feats.iter().try_for_each(|(_, feats)| {
                         feats
-                            .into_iter()
+                            .iter()
                             .try_for_each(|feat| writeln!(output, "{}", feat))
                     })
                 })
@@ -398,7 +397,26 @@ pub fn parallel_parse<const SEP: u8>(s: &str) -> Result<ChromRecord<'_>, &'stati
     Ok(x)
 }
 
-#[cfg(not(windows))]
+pub fn sequential_parse<'a, const SEP: u8>(
+    s: impl Iterator<Item = &'a str>,
+) -> Result<ChromRecord<'a>, &'static str> {
+    let mut res: HashMap<&'a str, Vec<Record<'a>>> = HashMap::new();
+    for line in s {
+        if line.starts_with('#') {
+            continue;
+        }
+
+        Record::parse::<SEP>(line)
+            .map(|r| {
+                res.entry(r.chrom).or_default().push(r);
+            })
+            .ok();
+    }
+
+    Ok(res)
+}
+
+#[cfg(unix)]
 pub fn max_mem_usage_mb() -> f64 {
     let rusage = unsafe {
         let mut rusage = std::mem::MaybeUninit::uninit();

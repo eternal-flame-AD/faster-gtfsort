@@ -76,34 +76,37 @@ impl Args {
         if !self.input.exists() {
             let err = format!("file {:?} does not exist", self.input);
             Err(GtfSortError::InvalidInput(err))
-        } else if !self.input.extension().unwrap().eq("gff")
-            & !self.input.extension().unwrap().eq("gtf")
-            & !self.input.extension().unwrap().eq("gff3")
-        {
-            let err = format!(
-                "file {:?} is not a GTF or GFF3 file, please specify the correct format",
-                self.input
-            );
-            return Err(GtfSortError::InvalidInput(err));
-        } else if std::fs::metadata(&self.input).unwrap().len() == 0 {
-            let err = format!("file {:?} is empty", self.input);
-            return Err(GtfSortError::InvalidInput(err));
+        } else if let Some(ext) = self.input.extension() {
+            if ext != "gff" && ext != "gtf" && ext != "gff3" {
+                let err = format!(
+                    "file {:?} is not a GTF or GFF3 file, please specify the correct format",
+                    self.input
+                );
+                Err(GtfSortError::InvalidInput(err))
+            } else if std::fs::metadata(&self.input).unwrap().len() == 0 {
+                let err = format!("file {:?} is empty", self.input);
+                Err(GtfSortError::InvalidInput(err))
+            } else {
+                Ok(())
+            }
         } else {
-            Ok(())
+            let err = format!("file {:?} does not have an extension", self.input);
+            Err(GtfSortError::InvalidInput(err))
         }
     }
 
     /// Checks the output file for validity. If the file is not a BED file, an GtfSortError is returned.
     fn check_output(&self) -> Result<(), GtfSortError> {
-        if !self.output.extension().unwrap().eq("gtf")
-            & !self.output.extension().unwrap().eq("gff3")
-            & !self.output.extension().unwrap().eq("gff")
-        {
-            let err = format!(
-                "file {:?} is not a GTF/GFF file, please specify the correct output format",
-                self.output
-            );
-            Err(GtfSortError::InvalidOutput(err))
+        if let Some(ext) = self.output.extension() {
+            if ext != "gff" && ext != "gtf" && ext != "gff3" {
+                let err = format!(
+                    "file {:?} is not a GTF/GFF file, please specify the correct output format",
+                    self.output
+                );
+                Err(GtfSortError::InvalidOutput(err))
+            } else {
+                Ok(())
+            }
         } else {
             Ok(())
         }
