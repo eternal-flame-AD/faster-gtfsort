@@ -314,7 +314,7 @@ pub fn write_obj_mmaped<'a, P: AsRef<Path> + Debug>(
     let mut output_map = unsafe { mmap::MemoryMapMut::from_file(&f, total_size)? };
 
     #[cfg(windows)]
-    let mut output_map = unsafe { mmap::MemoryMapMut::from_handle(&f, size as usize)? };
+    let mut output_map = unsafe { mmap::MemoryMapMut::from_handle(&f, total_size)? };
 
     match output_map.madvise(&[Madvice::Random]) {
         Ok(_) => (),
