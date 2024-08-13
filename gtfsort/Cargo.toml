@@ -20,7 +20,7 @@ indoc = "2.0.4"
 thiserror = { workspace = true }
 simple_logger = "4.0.0"
 rayon = "1.8.0"
-num_cpus = "1.16.0"
+num_cpus = { workspace = true }
 log = { workspace = true }
 hashbrown = {version="0.14", features=["rayon"]}
 dashmap = { workspace = true }

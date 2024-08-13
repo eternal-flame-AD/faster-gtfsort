@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "gtfsort",
+    "py-gtfsort",
     "web/gtfsort-webui/gtfsort"
 ]
 
@@ -23,6 +24,7 @@ log = "0.4.14"
 
 clap = "4.0"
 libc = "0.2.151"
+num_cpus = "1.16.0"
 dashmap = "5.5"
 itertools = "0.13.0"
 

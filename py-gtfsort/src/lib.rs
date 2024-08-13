@@ -3,8 +3,6 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pyo3::wrap_pyfunction;
 
-use num_cpus;
-
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -35,7 +33,7 @@ fn sort(py: Python, input: PyObject, output: PyObject, threads: Option<usize>) -
 }
 
 #[pyfunction]
-fn sort_from_string<'a>(
+fn sort_from_string(
     py: Python,
     input: &str,
     output_callback: PyObject,
