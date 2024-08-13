@@ -1,0 +1,26 @@
+[package]
+name = "gtfsort-web"
+version = "0.1.0"
+build = "build.rs"
+edition = "2021"
+authors = { workspace = true }
+license = { workspace = true }
+description = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+readme = { workspace = true }
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "0.2.84"
+js-sys = "0.3.69"
+gtfsort = { workspace = true }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3.34"
+
+[build-dependencies]
+vergen = { workspace = true }
+vergen-git2 = { workspace = true }
